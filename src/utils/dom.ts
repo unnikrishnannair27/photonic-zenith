@@ -133,3 +133,29 @@ export function parseStyleString(styleString: string): Record<string, string> {
 
     return style;
 }
+
+export function findNodeById(nodes: Node[], id: string): Node | null {
+    for (const node of nodes) {
+        if (node.id === id) return node;
+        if (node.type === 'element' && node.children.length > 0) {
+            const found = findNodeById(node.children, id);
+            if (found) return found;
+        }
+    }
+    return null;
+}
+
+export function updateNodeInTree(nodes: Node[], id: string, updates: Partial<ElementNode | TextNode>): Node[] {
+    return nodes.map(node => {
+        if (node.id === id) {
+            return { ...node, ...updates } as Node;
+        }
+        if (node.type === 'element' && node.children.length > 0) {
+            return {
+                ...node,
+                children: updateNodeInTree(node.children, id, updates)
+            };
+        }
+        return node;
+    });
+}

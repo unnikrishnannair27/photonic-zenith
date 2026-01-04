@@ -1,0 +1,110 @@
+interface CssPropertyConfig {
+    type: 'select' | 'text' | 'number' | 'color';
+    placeholder?: string;
+    options?: string[];
+    min?: number;
+    max?: number;
+    step?: number;
+}
+
+export const CSS_PROPERTIES: Record<string, Record<string, CssPropertyConfig>> = {
+    'Layout': {
+        display: { type: 'select', options: ['block', 'inline', 'inline-block', 'flex', 'inline-flex', 'grid', 'none', 'contents'] },
+        position: { type: 'select', options: ['static', 'relative', 'absolute', 'fixed', 'sticky'] },
+        top: { type: 'text', placeholder: 'e.g., 10px, 1rem, auto' },
+        right: { type: 'text', placeholder: 'e.g., 10px, 1rem, auto' },
+        bottom: { type: 'text', placeholder: 'e.g., 10px, 1rem, auto' },
+        left: { type: 'text', placeholder: 'e.g., 10px, 1rem, auto' },
+        zIndex: { type: 'number', placeholder: '0' },
+        overflow: { type: 'select', options: ['visible', 'hidden', 'scroll', 'auto'] },
+        visibility: { type: 'select', options: ['visible', 'hidden', 'collapse'] },
+    },
+    'Sizing': {
+        width: { type: 'text', placeholder: 'e.g., 100px, 50%, auto' },
+        height: { type: 'text', placeholder: 'e.g., 100px, 50%, auto' },
+        minWidth: { type: 'text', placeholder: 'e.g., 100px, 50%' },
+        minHeight: { type: 'text', placeholder: 'e.g., 100px, 50%' },
+        maxWidth: { type: 'text', placeholder: 'e.g., 100px, 50%' },
+        maxHeight: { type: 'text', placeholder: 'e.g., 100px, 50%' },
+    },
+    'Spacing': {
+        margin: { type: 'text', placeholder: 'e.g., 10px, 1rem 2rem' },
+        marginTop: { type: 'text', placeholder: 'e.g., 10px, 1rem' },
+        marginRight: { type: 'text', placeholder: 'e.g., 10px, 1rem' },
+        marginBottom: { type: 'text', placeholder: 'e.g., 10px, 1rem' },
+        marginLeft: { type: 'text', placeholder: 'e.g., 10px, 1rem' },
+        padding: { type: 'text', placeholder: 'e.g., 10px, 1rem 2rem' },
+        paddingTop: { type: 'text', placeholder: 'e.g., 10px, 1rem' },
+        paddingRight: { type: 'text', placeholder: 'e.g., 10px, 1rem' },
+        paddingBottom: { type: 'text', placeholder: 'e.g., 10px, 1rem' },
+        paddingLeft: { type: 'text', placeholder: 'e.g., 10px, 1rem' },
+    },
+    'Typography': {
+        color: { type: 'color' },
+        fontSize: { type: 'text', placeholder: 'e.g., 16px, 1rem' },
+        fontWeight: { type: 'select', options: ['100', '200', '300', '400', '500', '600', '700', '800', '900', 'normal', 'bold', 'bolder', 'lighter'] },
+        fontFamily: { type: 'text', placeholder: 'e.g., Arial, sans-serif' },
+        fontStyle: { type: 'select', options: ['normal', 'italic', 'oblique'] },
+        lineHeight: { type: 'text', placeholder: 'e.g., 1.5, 24px' },
+        letterSpacing: { type: 'text', placeholder: 'e.g., 1px, 0.1em' },
+        textAlign: { type: 'select', options: ['left', 'center', 'right', 'justify'] },
+        textDecoration: { type: 'select', options: ['none', 'underline', 'overline', 'line-through'] },
+        textTransform: { type: 'select', options: ['none', 'uppercase', 'lowercase', 'capitalize'] },
+        whiteSpace: { type: 'select', options: ['normal', 'nowrap', 'pre', 'pre-wrap', 'pre-line'] },
+        wordBreak: { type: 'select', options: ['normal', 'break-all', 'keep-all', 'break-word'] },
+    },
+    'Background': {
+        backgroundColor: { type: 'color' },
+        backgroundImage: { type: 'text', placeholder: 'e.g., url(image.jpg)' },
+        backgroundSize: { type: 'select', options: ['auto', 'cover', 'contain'] },
+        backgroundPosition: { type: 'text', placeholder: 'e.g., center, top left' },
+        backgroundRepeat: { type: 'select', options: ['repeat', 'no-repeat', 'repeat-x', 'repeat-y'] },
+    },
+    'Border': {
+        border: { type: 'text', placeholder: 'e.g., 1px solid black' },
+        borderWidth: { type: 'text', placeholder: 'e.g., 1px, 2px 4px' },
+        borderStyle: { type: 'select', options: ['none', 'solid', 'dashed', 'dotted', 'double', 'groove', 'ridge'] },
+        borderColor: { type: 'color' },
+        borderRadius: { type: 'text', placeholder: 'e.g., 4px, 50%' },
+        borderTop: { type: 'text', placeholder: 'e.g., 1px solid black' },
+        borderRight: { type: 'text', placeholder: 'e.g., 1px solid black' },
+        borderBottom: { type: 'text', placeholder: 'e.g., 1px solid black' },
+        borderLeft: { type: 'text', placeholder: 'e.g., 1px solid black' },
+    },
+    'Flexbox': {
+        flexDirection: { type: 'select', options: ['row', 'row-reverse', 'column', 'column-reverse'] },
+        flexWrap: { type: 'select', options: ['nowrap', 'wrap', 'wrap-reverse'] },
+        justifyContent: { type: 'select', options: ['flex-start', 'flex-end', 'center', 'space-between', 'space-around', 'space-evenly'] },
+        alignItems: { type: 'select', options: ['stretch', 'flex-start', 'flex-end', 'center', 'baseline'] },
+        alignContent: { type: 'select', options: ['stretch', 'flex-start', 'flex-end', 'center', 'space-between', 'space-around'] },
+        gap: { type: 'text', placeholder: 'e.g., 10px, 1rem' },
+        flex: { type: 'text', placeholder: 'e.g., 1, 0 1 auto' },
+        flexGrow: { type: 'number', placeholder: '0' },
+        flexShrink: { type: 'number', placeholder: '1' },
+        order: { type: 'number', placeholder: '0' },
+    },
+    'Grid': {
+        gridTemplateColumns: { type: 'text', placeholder: 'e.g., 1fr 1fr, repeat(3, 1fr)' },
+        gridTemplateRows: { type: 'text', placeholder: 'e.g., 1fr 1fr, auto' },
+        gridColumn: { type: 'text', placeholder: 'e.g., 1 / 3, span 2' },
+        gridRow: { type: 'text', placeholder: 'e.g., 1 / 3, span 2' },
+        gridGap: { type: 'text', placeholder: 'e.g., 10px, 1rem' },
+        justifyItems: { type: 'select', options: ['start', 'end', 'center', 'stretch'] },
+        alignItems: { type: 'select', options: ['start', 'end', 'center', 'stretch'] },
+    },
+    'Transform & Effects': {
+        transform: { type: 'text', placeholder: 'e.g., rotate(45deg), scale(1.5)' },
+        transformOrigin: { type: 'text', placeholder: 'e.g., center, top left' },
+        opacity: { type: 'number', placeholder: '1', min: 0, max: 1, step: 0.1 },
+        boxShadow: { type: 'text', placeholder: 'e.g., 0 4px 6px rgba(0,0,0,0.1)' },
+        textShadow: { type: 'text', placeholder: 'e.g., 2px 2px 4px rgba(0,0,0,0.5)' },
+        filter: { type: 'text', placeholder: 'e.g., blur(5px), brightness(1.2)' },
+    },
+    'Animation & Transition': {
+        transition: { type: 'text', placeholder: 'e.g., all 0.3s ease' },
+        transitionDuration: { type: 'text', placeholder: 'e.g., 0.3s, 300ms' },
+        transitionTimingFunction: { type: 'select', options: ['ease', 'linear', 'ease-in', 'ease-out', 'ease-in-out'] },
+        animation: { type: 'text', placeholder: 'e.g., slidein 3s ease-in' },
+        cursor: { type: 'select', options: ['auto', 'pointer', 'default', 'move', 'text', 'wait', 'not-allowed', 'grab', 'grabbing'] },
+    },
+};

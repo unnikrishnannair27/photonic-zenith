@@ -1,15 +1,16 @@
 import React, { useState, useRef } from 'react';
 import { type Node } from '../utils/dom';
 import styleToObject from 'style-to-object';
+import { useComponentStore } from '../store/useComponentStore';
 
 interface EditableNodeProps {
     node: Node;
-    onMove: (sourceId: string, targetId: string, position: 'before' | 'after' | 'inside') => void;
     onHover?: (id: string, rect: DOMRect, tagName: string) => void;
     onDropHover?: (id: string | null, rect?: DOMRect, tagName?: string, position?: 'top' | 'bottom' | 'inside') => void;
 }
 
-export function EditableNode({ node, onMove, onHover, onDropHover }: EditableNodeProps) {
+export function EditableNode({ node, onHover, onDropHover }: EditableNodeProps) {
+    const { moveNode, setActiveNodeId } = useComponentStore();
     const [isOver, setIsOver] = useState<'top' | 'bottom' | 'inside' | null>(null);
     const [isDragging, setIsDragging] = useState(false);
 
@@ -18,18 +19,7 @@ export function EditableNode({ node, onMove, onHover, onDropHover }: EditableNod
 
     // Text nodes are simplest case
     if (node.type === 'text') {
-        return (
-            <span
-                draggable
-                onDragStart={(e) => {
-                    e.dataTransfer.setData('nodeId', node.id);
-                    e.stopPropagation();
-                }}
-                className="hover:bg-blue-100 cursor-text"
-            >
-                {node.content}
-            </span>
-        );
+        return <>{node.content}</>;
     }
 
     const reportDropHover = (pos: 'top' | 'bottom' | 'inside' | null, element: HTMLElement) => {
@@ -75,7 +65,7 @@ export function EditableNode({ node, onMove, onHover, onDropHover }: EditableNod
         const sourceId = e.dataTransfer.getData('nodeId');
         if (sourceId && sourceId !== node.id) {
             const pos = isOver === 'top' ? 'before' : isOver === 'bottom' ? 'after' : 'inside';
-            onMove(sourceId, node.id, pos);
+            moveNode(sourceId, node.id, pos);
         }
     };
 
@@ -101,6 +91,7 @@ export function EditableNode({ node, onMove, onHover, onDropHover }: EditableNod
 
     const commonProps = {
         ...node.attributes,
+        'data-node-id': node.id,
         draggable: true,
         onDragStart: (e: React.DragEvent) => {
             e.dataTransfer.setData('nodeId', node.id);
@@ -120,9 +111,12 @@ export function EditableNode({ node, onMove, onHover, onDropHover }: EditableNod
             }
         },
         onClick: (e: React.MouseEvent) => {
+            e.stopPropagation();
+            // Prevent default link behavior
             if (node.tagName === 'a') {
                 e.preventDefault();
             }
+            setActiveNodeId(node.id);
         },
         style
     };
@@ -139,7 +133,6 @@ export function EditableNode({ node, onMove, onHover, onDropHover }: EditableNod
                 <EditableNode
                     key={child.id}
                     node={child}
-                    onMove={onMove}
                     onHover={onHover}
                     onDropHover={onDropHover}
                 />
@@ -147,3 +140,4 @@ export function EditableNode({ node, onMove, onHover, onDropHover }: EditableNod
         </Tag>
     );
 }
+

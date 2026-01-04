@@ -21,7 +21,8 @@
     "style-to-object": "^1.0.14",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.18",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

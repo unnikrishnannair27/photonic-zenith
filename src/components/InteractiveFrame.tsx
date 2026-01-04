@@ -3,14 +3,12 @@ import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import { type Node } from '../utils/dom';
 import { EditableNode } from './EditableNode.tsx';
+import { useComponentStore } from '../store/useComponentStore';
 
 interface InteractiveFrameProps {
     width: string;
     height: string;
     label: string;
-    nodes: Node[];
-    headContent: string;
-    onMove: (sourceId: string, targetId: string, position: 'before' | 'after' | 'inside') => void;
     className?: string;
 }
 
@@ -31,9 +29,14 @@ function findNeighbors(nodes: Node[], targetId: string): { prevId: string | null
     return null;
 }
 
-export function InteractiveFrame({ width, height, label, nodes, headContent, onMove, className }: InteractiveFrameProps) {
+export function InteractiveFrame({ width, height, label, className }: InteractiveFrameProps) {
+    const { docState, activeNodeId, moveNode, deleteNode } = useComponentStore();
+    const nodes = docState.body;
+    const headContent = docState.head;
+
     const [mountNode, setMountNode] = useState<HTMLElement | null>(null);
     const [hoverState, setHoverState] = useState<{ id: string, rect: DOMRect, tagName: string } | null>(null);
+    const [selectionState, setSelectionState] = useState<{ id: string, rect: DOMRect, tagName: string } | null>(null);
     const [neighbors, setNeighbors] = useState<{ prevId: string | null, nextId: string | null } | null>(null);
     const [dropTarget, setDropTarget] = useState<{ id: string, rect: DOMRect, tagName: string, position: 'top' | 'bottom' | 'inside' } | null>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -47,12 +50,60 @@ export function InteractiveFrame({ width, height, label, nodes, headContent, onM
         }
     }, [hoverState, nodes]);
 
+    // Handle Active Selection
+    useEffect(() => {
+        if (!activeNodeId || !iframeRef.current?.contentDocument) {
+            setSelectionState(null);
+            return;
+        }
+
+        const doc = iframeRef.current.contentDocument;
+        const el = doc.querySelector(`[data-node-id="${activeNodeId}"]`) as HTMLElement;
+
+        if (el) {
+            const updateRect = () => {
+                const rect = el.getBoundingClientRect();
+                setSelectionState({
+                    id: activeNodeId,
+                    rect,
+                    tagName: el.tagName
+                });
+            };
+
+            updateRect();
+            // Scroll to view
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+
+            // Detect resize/mutation? For now, simplistic.
+            window.addEventListener('resize', updateRect);
+            return () => window.removeEventListener('resize', updateRect);
+        } else {
+            setSelectionState(null);
+        }
+    }, [activeNodeId, nodes, width, height]); // Re-run when nodes change or layout changes
+
     useEffect(() => {
         if (iframeRef.current?.contentDocument) {
             const doc = iframeRef.current.contentDocument;
 
             // Setup Head
             doc.head.innerHTML = headContent;
+
+            // Design Mode Overrides: Force mobile menus to be visible if they exist
+            // This is a heuristic to help users edit hidden content
+            const style = doc.createElement('style');
+            style.textContent = `
+                /* Force visibility of common mobile menu patterns in design view */
+                .mobile-menu, .mobile-sub-menu {
+                    display: block !important;
+                    max-height: none !important;
+                    opacity: 1 !important;
+                    visibility: visible !important;
+                    position: relative !important; /* Prevent overlap if absolute */
+                    transform: none !important;
+                }
+            `;
+            doc.head.appendChild(style);
 
             // Re-create scripts to ensure they execute (e.g. Tailwind CDN)
             Array.from(doc.head.querySelectorAll('script')).forEach(oldScript => {
@@ -91,7 +142,6 @@ export function InteractiveFrame({ width, height, label, nodes, headContent, onM
                             <EditableNode
                                 key={node.id}
                                 node={node}
-                                onMove={onMove}
                                 onHover={(id, rect, tagName) => setHoverState({ id, rect, tagName })}
                                 onDropHover={(id, rect, tagName, position) => {
                                     if (!id || !rect || !tagName || !position) setDropTarget(null);
@@ -100,8 +150,39 @@ export function InteractiveFrame({ width, height, label, nodes, headContent, onM
                             />
                         ))}
 
+                        {/* Selection Overlay (Active) */}
+                        {selectionState && (
+                            <div
+                                style={{
+                                    position: 'fixed',
+                                    top: selectionState.rect.top,
+                                    left: selectionState.rect.left,
+                                    width: selectionState.rect.width,
+                                    height: selectionState.rect.height,
+                                    pointerEvents: 'none',
+                                    border: '2px solid #3b82f6', // Solid blue
+                                    zIndex: 9998 // Below hover overlay
+                                }}
+                            >
+                                <div style={{
+                                    position: 'absolute',
+                                    top: '-20px',
+                                    right: '0',
+                                    background: '#3b82f6',
+                                    color: 'white',
+                                    fontSize: '10px',
+                                    padding: '2px 6px',
+                                    borderRadius: '2px 2px 0 0',
+                                    fontWeight: 'bold',
+                                    textTransform: 'uppercase'
+                                }}>
+                                    {selectionState.tagName}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Hover Overlay */}
-                        {hoverState && !dropTarget && (
+                        {hoverState && !dropTarget && hoverState.id !== activeNodeId && (
                             <div
                                 style={{
                                     position: 'fixed',
@@ -110,53 +191,97 @@ export function InteractiveFrame({ width, height, label, nodes, headContent, onM
                                     width: hoverState.rect.width,
                                     height: hoverState.rect.height,
                                     pointerEvents: 'none',
-                                    border: '1px solid #3b82f6',
+                                    border: '1px solid #60a5fa', // Lighter blue for hover
                                     zIndex: 9999
                                 }}
                             >
                                 <div style={{
                                     position: 'absolute',
-                                    top: '-20px',
+                                    top: '-24px',
                                     left: '0',
                                     display: 'flex',
-                                    gap: '1px',
-                                    pointerEvents: 'auto' // Re-enable pointer events for buttons
+                                    flexDirection: 'column',
+                                    gap: '2px', // gap between breadcrumbs and label
+                                    alignItems: 'flex-start',
+                                    pointerEvents: 'auto'
                                 }}>
-                                    <div style={{
-                                        background: '#3b82f6',
-                                        color: 'white',
-                                        fontSize: '10px',
-                                        padding: '2px 6px',
-                                        borderRadius: '2px 2px 0 0',
-                                        fontWeight: 'bold',
-                                        textTransform: 'uppercase'
-                                    }}>
-                                        {hoverState.tagName}
+                                    {/* Main Label and Controls */}
+                                    <div className="flex gap-px">
+                                        <div style={{
+                                            background: '#60a5fa',
+                                            color: 'white',
+                                            fontSize: '10px',
+                                            padding: '2px 6px',
+                                            borderRadius: '2px 2px 0 0',
+                                            fontWeight: 'bold',
+                                            textTransform: 'uppercase'
+                                        }}>
+                                            {hoverState.tagName}
+                                        </div>
+                                        {/* ... buttons ... */}
+                                        {neighbors?.prevId && (
+                                            <>
+                                                <button
+                                                    onMouseDown={(e) => {
+                                                        e.stopPropagation();
+                                                        moveNode(hoverState.id, neighbors.prevId!, 'before');
+                                                    }}
+                                                    className="bg-blue-600 text-white px-2 rounded-t-sm hover:bg-blue-700 flex items-center justify-center border-l border-blue-400 font-bold"
+                                                    title="Move Left (Previous)"
+                                                >
+                                                    ←
+                                                </button>
+                                                <button
+                                                    onMouseDown={(e) => {
+                                                        e.stopPropagation();
+                                                        moveNode(hoverState.id, neighbors.prevId!, 'before');
+                                                    }}
+                                                    className="bg-blue-600 text-white px-2 rounded-t-sm hover:bg-blue-700 flex items-center justify-center border-l border-blue-400 font-bold"
+                                                    title="Move Up (Previous)"
+                                                >
+                                                    ↑
+                                                </button>
+                                            </>
+                                        )}
+                                        {neighbors?.nextId && (
+                                            <>
+                                                <button
+                                                    onMouseDown={(e) => {
+                                                        e.stopPropagation();
+                                                        moveNode(hoverState.id, neighbors.nextId!, 'after');
+                                                    }}
+                                                    className="bg-blue-600 text-white px-2 rounded-t-sm hover:bg-blue-700 flex items-center justify-center border-l border-blue-400 font-bold"
+                                                    title="Move Down (Next)"
+                                                >
+                                                    ↓
+                                                </button>
+                                                <button
+                                                    onMouseDown={(e) => {
+                                                        e.stopPropagation();
+                                                        moveNode(hoverState.id, neighbors.nextId!, 'after');
+                                                    }}
+                                                    className="bg-blue-600 text-white px-2 rounded-t-sm hover:bg-blue-700 flex items-center justify-center border-l border-blue-400 font-bold"
+                                                    title="Move Right (Next)"
+                                                >
+                                                    →
+                                                </button>
+                                            </>
+                                        )}
+                                        {deleteNode && (
+                                            <button
+                                                onMouseDown={(e) => {
+                                                    e.stopPropagation();
+                                                    if (confirm('Delete this element?')) {
+                                                        deleteNode(hoverState.id);
+                                                    }
+                                                }}
+                                                className="bg-red-500 text-white px-2 rounded-t-sm hover:bg-red-600 flex items-center justify-center border-l border-red-400 font-bold ml-px"
+                                                title="Delete Element"
+                                            >
+                                                ×
+                                            </button>
+                                        )}
                                     </div>
-                                    {neighbors?.prevId && (
-                                        <button
-                                            onMouseDown={(e) => {
-                                                e.stopPropagation();
-                                                onMove(hoverState.id, neighbors.prevId!, 'before');
-                                            }}
-                                            className="bg-blue-600 text-white px-2 rounded-t-sm hover:bg-blue-700 flex items-center justify-center border-l border-blue-400 font-bold"
-                                            title="Move Up"
-                                        >
-                                            ↑
-                                        </button>
-                                    )}
-                                    {neighbors?.nextId && (
-                                        <button
-                                            onMouseDown={(e) => {
-                                                e.stopPropagation();
-                                                onMove(hoverState.id, neighbors.nextId!, 'after');
-                                            }}
-                                            className="bg-blue-600 text-white px-2 rounded-t-sm hover:bg-blue-700 flex items-center justify-center border-l border-blue-400 font-bold"
-                                            title="Move Down"
-                                        >
-                                            ↓
-                                        </button>
-                                    )}
                                 </div>
                             </div>
                         )}

@@ -9,6 +9,9 @@ import { generateReactCode } from './utils/reactGenerator';
 import { HTML_DATA } from './data/htmlElements';
 import { useComponentStore } from './store/useComponentStore';
 import { useUIStore } from './store/useUIStore';
+import { ProjectManager } from './components/ProjectManager';
+import { generateAstroCode } from './utils/astroGenerator';
+import { Save } from 'lucide-react';
 
 const TEMPLATES = [
   { label: 'Primary Button', icon: <MousePointer2 size={16} />, html: '<button style="background: #3b82f6; color: white; padding: 0.5rem 1rem; border-radius: 0.375rem; border: none; cursor: pointer;">Click Me</button>' },
@@ -51,6 +54,7 @@ export default function App() {
     docState,
     htmlInput,
     setHtmlInput,
+    projectConfig,
   } = useComponentStore();
 
   // UI Store
@@ -83,6 +87,10 @@ export default function App() {
 
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
   const leftSidebarRef = useRef<HTMLDivElement>(null);
   const rightSidebarRef = useRef<HTMLDivElement>(null);
 
@@ -133,6 +141,39 @@ export default function App() {
   }, []);
 
   const ReactCode = generateReactCode(docState);
+  const AstroCode = generateAstroCode(docState);
+
+  const handleSaveComponent = async () => {
+    if (!projectConfig || !saveName) return;
+    setIsSaving(true);
+    try {
+      const content = activeCodeTab === 'react' ? ReactCode : AstroCode; // Default to Astro if HTML?
+      const type = activeCodeTab === 'react' ? 'react' : 'astro';
+
+      const res = await fetch(`/api/projects/${projectConfig.name}/components`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          componentName: saveName,
+          content,
+          type
+        })
+      });
+
+      if (res.ok) {
+        setShowSaveModal(false);
+        setSaveName('');
+        // Maybe toast?
+      } else {
+        alert('Failed to save');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error saving component');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
 
 
@@ -182,6 +223,15 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-3">
+          {projectConfig && (
+            <div className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded border border-indigo-100 flex items-center gap-1">
+              <span className="opacity-50">Project:</span>
+              <span className="font-semibold">{projectConfig.name}</span>
+            </div>
+          )}
+          <button onClick={() => setShowSaveModal(true)} disabled={!projectConfig} className="p-1.5 rounded-md hover:bg-gray-100 transition-colors mr-1 text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed" title="Save Component">
+            <Save size={20} />
+          </button>
           <button onClick={toggleRightPanel} className={`p-1.5 rounded-md hover:bg-gray-100 transition-colors mr-2 ${!rightPanelOpen ? 'text-gray-400' : 'text-indigo-600 bg-indigo-50'}`} title="Toggle Properties">
             <PanelRight size={20} />
           </button>
@@ -301,9 +351,9 @@ export default function App() {
         </div>
 
         {/* Center Canvas Area */}
-        <div className="flex-1 bg-gray-50 relative overflow-auto flex items-center justify-center p-8 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:20px_20px]">
+        <div className="flex-1 bg-gray-50 relative overflow-auto flex p-8 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:20px_20px]">
           <div
-            className="bg-white shadow-2xl transition-all duration-500 ease-in-out relative ring-1 ring-gray-900/5"
+            className="bg-white shadow-2xl transition-all duration-500 ease-in-out relative ring-1 ring-gray-900/5 m-auto"
             style={{ width: dims.width, height: dims.height }}
           >
             {/* Canvas Header/Label */}
@@ -368,12 +418,14 @@ export default function App() {
               <div className="flex gap-4">
                 <button onClick={() => setActiveCodeTab('html')} className={`pb-1 text-sm font-medium transition-colors border-b-2 ${activeCodeTab === 'html' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>HTML Source</button>
                 <button onClick={() => setActiveCodeTab('react')} className={`pb-1 text-sm font-medium transition-colors border-b-2 ${activeCodeTab === 'react' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>React Code</button>
+                {/* We are hijacking the type checking slightly on activeCodeTab type (it was 'html'|'react') - but JS allows strings. We should eventually update the type in store. */}
+                <button onClick={() => setActiveCodeTab('astro' as any)} className={`pb-1 text-sm font-medium transition-colors border-b-2 ${activeCodeTab === 'astro' as any ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Astro Code</button>
               </div>
               <button onClick={() => setShowCodeModal(false)} className="p-1 hover:bg-gray-200 rounded-full transition-colors"><X size={20} className="text-gray-500" /></button>
             </div>
             <div className="flex-1 bg-gray-900 overflow-auto">
               <pre className="p-6 font-mono text-sm text-gray-300">
-                {activeCodeTab === 'html' ? htmlInput : ReactCode}
+                {activeCodeTab === 'html' ? htmlInput : (activeCodeTab === 'react' ? ReactCode : AstroCode)}
               </pre>
             </div>
             <div className="p-4 border-t border-gray-100 bg-white flex justify-between items-center">
@@ -420,6 +472,40 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* MODAL: Save Component */}
+      {showSaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-[400px] rounded-xl shadow-2xl flex flex-col border border-gray-200 overflow-hidden">
+            <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+              <h3 className="font-semibold text-gray-900">Save Component</h3>
+              <button onClick={() => setShowSaveModal(false)}><X size={18} className="text-gray-500" /></button>
+            </div>
+            <div className="p-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Component Name</label>
+              <input
+                type="text"
+                value={saveName}
+                onChange={e => setSaveName(e.target.value)}
+                placeholder="MyComponent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
+              <div className="mt-2 text-xs text-gray-500">
+                Will be saved as {saveName ? saveName : 'MyComponent'}.{activeCodeTab === 'react' ? 'jsx' : 'astro'} in {projectConfig?.name}/src/components/
+              </div>
+            </div>
+            <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
+              <button onClick={() => setShowSaveModal(false)} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-200 rounded-lg">Cancel</button>
+              <button onClick={handleSaveComponent} disabled={!saveName || isSaving} className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                {isSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Project Manager Overlay */}
+      <ProjectManager />
 
     </div>
   );

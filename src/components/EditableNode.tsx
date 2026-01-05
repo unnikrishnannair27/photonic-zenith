@@ -75,7 +75,13 @@ export function EditableNode({ node, onHover, onDropHover }: EditableNodeProps) 
     let parsedStyle: Record<string, any> = {};
     if (node.attributes.style) {
         try {
-            parsedStyle = styleToObject(node.attributes.style) || {};
+            const rawStyle = styleToObject(node.attributes.style) || {};
+            parsedStyle = Object.fromEntries(
+                Object.entries(rawStyle).map(([k, v]) => [
+                    k.replace(/-([a-z])/g, (g) => g[1].toUpperCase()),
+                    v
+                ])
+            );
         } catch (e) { }
     }
 

@@ -3,6 +3,9 @@ import { Settings, Search, Trash2, X, Layers, Type, Box, Hash, Maximize, Chevron
 import { TAILWIND_CATEGORIES } from '../constants/tailwindCategories';
 import { parseStyleString } from '../utils/dom';
 import { useComponentStore } from '../store/useComponentStore';
+import { useUIStore } from '../store/useUIStore';
+import { filterValidTailwindClasses } from '../utils/tailwindValidation';
+
 
 const CSS_SECTIONS = [
     {
@@ -41,8 +44,36 @@ const CSS_SECTIONS = [
     }
 ];
 
+const ELEMENT_ATTRIBUTES: Record<string, { name: string, label: string, type: 'text' | 'select', options?: string[], placeholder?: string }[]> = {
+    img: [
+        { name: 'src', label: 'Source URL', type: 'text', placeholder: 'https://example.com/image.jpg' },
+        { name: 'alt', label: 'Alt Text', type: 'text', placeholder: 'Image description' },
+        { name: 'width', label: 'Width', type: 'text', placeholder: 'auto' },
+        { name: 'height', label: 'Height', type: 'text', placeholder: 'auto' },
+    ],
+    a: [
+        { name: 'href', label: 'Link URL', type: 'text', placeholder: 'https://example.com' },
+        { name: 'target', label: 'Target', type: 'select', options: ['_self', '_blank', '_parent', '_top'] },
+    ],
+    input: [
+        { name: 'type', label: 'Type', type: 'select', options: ['text', 'password', 'email', 'number', 'checkbox', 'radio', 'submit', 'button', 'date', 'file'] },
+        { name: 'placeholder', label: 'Placeholder', type: 'text', placeholder: 'Enter text...' },
+        { name: 'name', label: 'Name', type: 'text', placeholder: 'field_name' },
+        { name: 'value', label: 'Value', type: 'text', placeholder: 'Initial value' },
+    ],
+    button: [
+        { name: 'type', label: 'Type', type: 'select', options: ['button', 'submit', 'reset'] },
+        { name: 'disabled', label: 'Disabled', type: 'select', options: ['false', 'true'] },
+    ],
+    iframe: [
+        { name: 'src', label: 'Source URL', type: 'text', placeholder: 'https://...' },
+        { name: 'title', label: 'Title', type: 'text', placeholder: 'Frame title' },
+    ]
+};
+
 export const PropertiesPanel: React.FC = () => {
     const { updateNode, deleteNode, setActiveNodeId, getSelectedNode } = useComponentStore();
+    const { activeViewport, setActiveViewport } = useUIStore();
     const selectedNode = getSelectedNode();
     const onClose = () => setActiveNodeId(null);
 
@@ -50,7 +81,28 @@ export const PropertiesPanel: React.FC = () => {
     const [customClassInput, setCustomClassInput] = useState('');
     const [showVisualCssEditor, setShowVisualCssEditor] = useState(true);
     const [activeCssSections, setActiveCssSections] = useState<Record<string, boolean>>({ "Layout": true });
+    const [activeModifier, setActiveModifier] = useState('');
 
+    const PSEUDO_MODIFIERS = [
+        { label: 'Default', value: '' },
+        { label: 'Hover', value: 'hover' },
+        { label: 'Focus', value: 'focus' },
+        { label: 'Active', value: 'active' },
+        { label: 'Disabled', value: 'disabled' },
+        { label: 'Visited', value: 'visited' },
+        { label: 'First Child', value: 'first' },
+        { label: 'Last Child', value: 'last' },
+        { label: 'Odd', value: 'odd' },
+        { label: 'Even', value: 'even' },
+    ];
+
+
+    const VIEWPORT_PREFIXES: Record<string, string> = {
+        mobile: '',
+        tablet: 'md:',
+        desktop: 'lg:',
+        large: 'xl:',
+    };
 
     // Helper to get current classes of selected node
     const getNodeClasses = (): string[] => {
@@ -71,10 +123,54 @@ export const PropertiesPanel: React.FC = () => {
         });
     };
 
+    // Helper to update classes with modifier and viewport support
+    const toggleTailwindClass = (prefixRegex: RegExp, newClassValue: string | null) => {
+        const currentClasses = getNodeClasses();
+        const viewportPrefix = VIEWPORT_PREFIXES[activeViewport] || '';
+        const modifierPrefix = activeModifier ? `${activeModifier}:` : '';
+        const fullPrefix = `${viewportPrefix}${modifierPrefix}`;
+
+        const patternSource = prefixRegex.source.startsWith('^') ? prefixRegex.source.slice(1) : prefixRegex.source;
+
+        // Match classes starting with the full prefix
+        const targetPrefixRegex = new RegExp(`^${fullPrefix}${patternSource}`);
+
+        const nextClasses = currentClasses.filter(c => !targetPrefixRegex.test(c));
+
+        if (newClassValue) {
+            nextClasses.push(fullPrefix + newClassValue);
+        }
+
+        updateNodeClasses(nextClasses);
+    };
+
     const addClassToNode = (className: string) => {
         const currentClasses = getNodeClasses();
-        if (!currentClasses.includes(className)) {
-            updateNodeClasses([...currentClasses, className]);
+        const viewportPrefix = VIEWPORT_PREFIXES[activeViewport] || '';
+
+        let finalClass = className;
+
+        // If the class doesn't start with the viewport prefix, add it (if needed)
+        if (viewportPrefix && !finalClass.startsWith(viewportPrefix)) {
+            finalClass = `${viewportPrefix}${finalClass}`;
+        }
+
+        if (activeModifier) {
+            // Insert activeModifier before class content but after viewport prefix
+            if (!finalClass.includes(`:${activeModifier}:`) && !finalClass.startsWith(`${activeModifier}:`)) {
+                if (viewportPrefix && finalClass.startsWith(viewportPrefix)) {
+                    const bareClass = finalClass.slice(viewportPrefix.length);
+                    if (!bareClass.startsWith(`${activeModifier}:`)) {
+                        finalClass = `${viewportPrefix}${activeModifier}:${bareClass}`;
+                    }
+                } else if (!finalClass.startsWith(`${activeModifier}:`)) {
+                    finalClass = `${activeModifier}:${finalClass}`;
+                }
+            }
+        }
+
+        if (!currentClasses.includes(finalClass)) {
+            updateNodeClasses([...currentClasses, finalClass]);
         }
     };
 
@@ -155,7 +251,7 @@ export const PropertiesPanel: React.FC = () => {
         </div>
     );
 
-    if (!selectedNode || selectedNode.type !== 'element') {
+    if (!selectedNode) {
         return (
             <div className="flex flex-col h-full bg-white border-l border-gray-200 w-full">
                 <div className="h-14 border-b border-gray-200 flex items-center justify-between px-4 bg-white flex-shrink-0">
@@ -171,6 +267,42 @@ export const PropertiesPanel: React.FC = () => {
                 </div>
             </div>
         );
+    }
+
+    // Text Node Editor
+    if (selectedNode.type === 'text') {
+        return (
+            <div className="flex flex-col h-full bg-white border-l border-gray-200 w-full">
+                <div className="h-14 border-b border-gray-200 flex items-center justify-between px-4 bg-white flex-shrink-0">
+                    <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                        <Type size={16} /> Text Properties
+                    </h3>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => deleteNode(selectedNode.id)}
+                            className="p-1 hover:bg-red-50 text-gray-400 hover:text-red-600 rounded transition-colors"
+                            title="Delete Text Node"
+                        >
+                            <Trash2 size={16} />
+                        </button>
+                        <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded text-gray-500">
+                            <X size={16} />
+                        </button>
+                    </div>
+                </div>
+                <div className="p-4 space-y-4">
+                    <div className="space-y-2">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase">Content</label>
+                        <textarea
+                            value={selectedNode.content || ''}
+                            onChange={(e) => updateNode(selectedNode.id, { content: e.target.value })}
+                            className="w-full h-32 p-3 text-sm border rounded-md focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none"
+                            placeholder="Enter text..."
+                        />
+                    </div>
+                </div>
+            </div>
+        )
     }
 
     const nodeClasses = getNodeClasses();
@@ -193,6 +325,40 @@ export const PropertiesPanel: React.FC = () => {
                     <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded text-gray-500">
                         <X size={16} />
                     </button>
+                </div>
+
+                {/* Modifier Selector */}
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center gap-2 overflow-x-auto no-scrollbar">
+                    <span className="text-[10px] uppercase font-bold text-gray-400 whitespace-nowrap">State:</span>
+                    <select
+                        value={activeModifier}
+                        onChange={(e) => setActiveModifier(e.target.value)}
+                        className="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:border-indigo-500 font-medium text-gray-700"
+                    >
+                        {PSEUDO_MODIFIERS.map(m => (
+                            <option key={m.value} value={m.value}>{m.label}</option>
+                        ))}
+                    </select>
+                    {activeModifier && (
+                        <span className="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100 animate-pulse">
+                            Editing {activeModifier} styles
+                        </span>
+                    )}
+                </div>
+
+                {/* Viewport Selector */}
+                <div className="px-4 py-2 bg-purple-50 border-b border-purple-100 flex items-center gap-2 overflow-x-auto no-scrollbar">
+                    <span className="text-[10px] uppercase font-bold text-purple-400 whitespace-nowrap">Viewport:</span>
+                    <select
+                        value={activeViewport}
+                        onChange={(e) => setActiveViewport(e.target.value as any)}
+                        className="text-xs border border-purple-200 rounded px-2 py-1 bg-white focus:outline-none focus:border-purple-500 font-medium text-purple-700"
+                    >
+                        <option value="mobile">Mobile (All)</option>
+                        <option value="tablet">Tablet (md)</option>
+                        <option value="desktop">Desktop (lg)</option>
+                        <option value="large">Large (xl)</option>
+                    </select>
                 </div>
             </div>
 
@@ -221,6 +387,67 @@ export const PropertiesPanel: React.FC = () => {
                     </div>
                 </div>
 
+                {/* Quick Text Edit for Elements with single text child */}
+                {selectedNode.children?.length === 1 && selectedNode.children[0].type === 'text' && (
+                    <div className="border rounded-lg overflow-hidden">
+                        <div className="bg-gray-50 border-b px-3 py-2">
+                            <h3 className="text-xs font-semibold text-gray-700 flex items-center gap-2">
+                                <Type size={14} /> Text Content
+                            </h3>
+                        </div>
+                        <div className="p-3 bg-white">
+                            <textarea
+                                value={selectedNode.children[0].content || ''}
+                                onChange={(e) => updateNode(selectedNode.children![0].id, { content: e.target.value })}
+                                className="w-full h-24 p-2 text-sm border rounded focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none"
+                                placeholder="Edit text content..."
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* Specific Element Attributes */}
+                {ELEMENT_ATTRIBUTES[selectedNode.tagName] && (
+                    <div className="border rounded-lg overflow-hidden">
+                        <div className="bg-gray-50 border-b px-3 py-2">
+                            <h3 className="text-xs font-semibold text-gray-700 flex items-center gap-2">
+                                <Settings size={14} /> Attributes
+                            </h3>
+                        </div>
+                        <div className="p-3 space-y-3 bg-white">
+                            {ELEMENT_ATTRIBUTES[selectedNode.tagName].map(attr => (
+                                <div key={attr.name}>
+                                    <label className="block text-[10px] uppercase font-bold text-gray-400 mb-1">{attr.label}</label>
+                                    {attr.type === 'select' ? (
+                                        <select
+                                            value={selectedNode.attributes[attr.name] || ''}
+                                            onChange={(e) => updateNode(selectedNode.id, {
+                                                attributes: { ...selectedNode.attributes, [attr.name]: e.target.value }
+                                            })}
+                                            className="w-full text-xs border rounded px-2 py-1.5 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        >
+                                            <option value="">Default</option>
+                                            {attr.options?.map(opt => (
+                                                <option key={opt} value={opt}>{opt}</option>
+                                            ))}
+                                        </select>
+                                    ) : (
+                                        <input
+                                            type="text"
+                                            value={selectedNode.attributes[attr.name] || ''}
+                                            onChange={(e) => updateNode(selectedNode.id, {
+                                                attributes: { ...selectedNode.attributes, [attr.name]: e.target.value }
+                                            })}
+                                            placeholder={attr.placeholder}
+                                            className="w-full text-xs border rounded px-2 py-1.5 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        />
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {/* Size & Dimensions */}
                 <div className="border rounded-lg overflow-hidden">
                     <div className="bg-gray-50 border-b px-3 py-2">
@@ -236,12 +463,8 @@ export const PropertiesPanel: React.FC = () => {
                                 {['w-auto', 'w-full', 'w-screen'].map(cls => (
                                     <button
                                         key={cls}
-                                        onClick={() => {
-                                            const newClasses = nodeClasses.filter(c => !c.startsWith('w-'));
-                                            newClasses.push(cls);
-                                            updateNodeClasses(newClasses);
-                                        }}
-                                        className={`px-1 py-1 text-[10px] rounded border ${nodeClasses.includes(cls) ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'bg-white border-gray-200 text-gray-600'}`}
+                                        onClick={() => toggleTailwindClass(/^w-/, cls)}
+                                        className={`px-1 py-1 text-[10px] rounded border ${nodeClasses.includes(activeModifier ? `${activeModifier}:${cls}` : cls) ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'bg-white border-gray-200 text-gray-600'}`}
                                     >
                                         {cls.replace('w-', '').charAt(0).toUpperCase() + cls.replace('w-', '').slice(1)}
                                     </button>
@@ -608,8 +831,121 @@ export const PropertiesPanel: React.FC = () => {
                             <Box size={14} /> Spacing
                         </h3>
                     </div>
-                    <div className="p-3 space-y-3">
-                        <p className="text-[10px] text-gray-400">Add padding/margin using the class search below (e.g. p-4, mt-2)</p>
+                    <div className="p-3 space-y-4">
+                        {/* Padding */}
+                        <div>
+                            <label className="text-[10px] uppercase font-bold text-gray-400 mb-1 block">Padding</label>
+                            <div className="grid grid-cols-2 gap-2 mb-2">
+                                {/* All Sides */}
+                                <div className="space-y-1">
+                                    <div className="text-[10px] text-gray-500">All Sides</div>
+                                    <select
+                                        onChange={(e) => {
+                                            const cls = nodeClasses.filter(c => !c.match(/^p-\d+$/));
+                                            if (e.target.value) cls.push(e.target.value);
+                                            updateNodeClasses(cls);
+                                        }}
+                                        value={nodeClasses.find(c => c.match(/^p-\d+$/)) || ''}
+                                        className="w-full text-xs border rounded px-1 py-1"
+                                    >
+                                        <option value="">-</option>
+                                        {[0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32].map(n => <option key={n} value={`p-${n}`}>{n}</option>)}
+                                    </select>
+                                </div>
+                                {/* X & Y Axis */}
+                                <div className="grid grid-cols-2 gap-1">
+                                    <div className="space-y-1">
+                                        <div className="text-[10px] text-gray-500">PX</div>
+                                        <select
+                                            onChange={(e) => {
+                                                const cls = nodeClasses.filter(c => !c.match(/^px-\d+$/));
+                                                if (e.target.value) cls.push(e.target.value);
+                                                updateNodeClasses(cls);
+                                            }}
+                                            value={nodeClasses.find(c => c.match(/^px-\d+$/)) || ''}
+                                            className="w-full text-xs border rounded px-1 py-1"
+                                        >
+                                            <option value="">-</option>
+                                            {[0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16].map(n => <option key={n} value={`px-${n}`}>{n}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <div className="text-[10px] text-gray-500">PY</div>
+                                        <select
+                                            onChange={(e) => {
+                                                const cls = nodeClasses.filter(c => !c.match(/^py-\d+$/));
+                                                if (e.target.value) cls.push(e.target.value);
+                                                updateNodeClasses(cls);
+                                            }}
+                                            value={nodeClasses.find(c => c.match(/^py-\d+$/)) || ''}
+                                            className="w-full text-xs border rounded px-1 py-1"
+                                        >
+                                            <option value="">-</option>
+                                            {[0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16].map(n => <option key={n} value={`py-${n}`}>{n}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Margin */}
+                        <div>
+                            <label className="text-[10px] uppercase font-bold text-gray-400 mb-1 block">Margin</label>
+                            <div className="grid grid-cols-2 gap-2">
+                                {/* All Sides */}
+                                <div className="space-y-1">
+                                    <div className="text-[10px] text-gray-500">All Sides</div>
+                                    <select
+                                        onChange={(e) => {
+                                            const cls = nodeClasses.filter(c => !c.match(/^m-\d+$/) && c !== 'm-auto');
+                                            if (e.target.value) cls.push(e.target.value);
+                                            updateNodeClasses(cls);
+                                        }}
+                                        value={nodeClasses.find(c => c.match(/^m-\d+$/) || c === 'm-auto') || ''}
+                                        className="w-full text-xs border rounded px-1 py-1"
+                                    >
+                                        <option value="">-</option>
+                                        <option value="m-auto">Auto</option>
+                                        {[0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32].map(n => <option key={n} value={`m-${n}`}>{n}</option>)}
+                                    </select>
+                                </div>
+                                {/* X & Y Axis */}
+                                <div className="grid grid-cols-2 gap-1">
+                                    <div className="space-y-1">
+                                        <div className="text-[10px] text-gray-500">MX</div>
+                                        <select
+                                            onChange={(e) => {
+                                                const cls = nodeClasses.filter(c => !c.match(/^mx-\d+$/) && c !== 'mx-auto');
+                                                if (e.target.value) cls.push(e.target.value);
+                                                updateNodeClasses(cls);
+                                            }}
+                                            value={nodeClasses.find(c => c.match(/^mx-\d+$/) || c === 'mx-auto') || ''}
+                                            className="w-full text-xs border rounded px-1 py-1"
+                                        >
+                                            <option value="">-</option>
+                                            <option value="mx-auto">Auto</option>
+                                            {[0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16].map(n => <option key={n} value={`mx-${n}`}>{n}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <div className="text-[10px] text-gray-500">MY</div>
+                                        <select
+                                            onChange={(e) => {
+                                                const cls = nodeClasses.filter(c => !c.match(/^my-\d+$/) && c !== 'my-auto');
+                                                if (e.target.value) cls.push(e.target.value);
+                                                updateNodeClasses(cls);
+                                            }}
+                                            value={nodeClasses.find(c => c.match(/^my-\d+$/) || c === 'my-auto') || ''}
+                                            className="w-full text-xs border rounded px-1 py-1"
+                                        >
+                                            <option value="">-</option>
+                                            <option value="my-auto">Auto</option>
+                                            {[0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16].map(n => <option key={n} value={`my-${n}`}>{n}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -649,8 +985,18 @@ export const PropertiesPanel: React.FC = () => {
                                 className="flex-1 px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter' && customClassInput.trim()) {
-                                        const classes = customClassInput.trim().split(' ');
-                                        classes.forEach(c => addClassToNode(c));
+                                        const rawClasses = customClassInput.trim().split(/\s+/);
+                                        const validClasses = filterValidTailwindClasses(rawClasses);
+
+                                        if (validClasses.length < rawClasses.length) {
+                                            console.warn('Some classes were filtered out as invalid:', rawClasses.filter(c => !validClasses.includes(c)));
+                                        }
+
+                                        if (validClasses.length > 0) {
+                                            const currentClasses = getNodeClasses();
+                                            const uniqueClasses = [...new Set([...currentClasses, ...validClasses])];
+                                            updateNodeClasses(uniqueClasses);
+                                        }
                                         setCustomClassInput('');
                                     }
                                 }}
@@ -658,8 +1004,18 @@ export const PropertiesPanel: React.FC = () => {
                             <button
                                 onClick={() => {
                                     if (customClassInput.trim()) {
-                                        const classes = customClassInput.trim().split(' ');
-                                        classes.forEach(c => addClassToNode(c));
+                                        const rawClasses = customClassInput.trim().split(/\s+/);
+                                        const validClasses = filterValidTailwindClasses(rawClasses);
+
+                                        if (validClasses.length < rawClasses.length) {
+                                            console.warn('Some classes were filtered out as invalid:', rawClasses.filter(c => !validClasses.includes(c)));
+                                        }
+
+                                        if (validClasses.length > 0) {
+                                            const currentClasses = getNodeClasses();
+                                            const uniqueClasses = [...new Set([...currentClasses, ...validClasses])];
+                                            updateNodeClasses(uniqueClasses);
+                                        }
                                         setCustomClassInput('');
                                     }
                                 }}
@@ -735,6 +1091,50 @@ export const PropertiesPanel: React.FC = () => {
                                                                     <option key={opt} value={opt}>{opt}</option>
                                                                 ))}
                                                             </select>
+                                                        ) : prop.name.includes('color') ? (
+                                                            <div className="flex gap-2">
+                                                                <div className="relative w-8 h-8 rounded border border-gray-300 overflow-hidden flex-shrink-0 bg-gray-50 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPjxwYXRoIGQ9Ik0wIDBoNHY0SDB6bDQKNGg0VjRoLTR6IiBmaWxsPSIjZGRkIi8+PC9zdmc+')]">
+                                                                    <div
+                                                                        className="absolute inset-0 w-full h-full pointer-events-none"
+                                                                        style={{ backgroundColor: styles[prop.name] || 'transparent' }}
+                                                                    />
+                                                                    <input
+                                                                        type="color"
+                                                                        value={styles[prop.name]?.match(/^#[0-9a-f]{6}$/i) ? styles[prop.name] : '#000000'}
+                                                                        onChange={(e) => {
+                                                                            const newStyles = { ...styles };
+                                                                            newStyles[prop.name] = e.target.value;
+                                                                            const styleString = Object.entries(newStyles)
+                                                                                .map(([k, v]) => `${k.replace(/[A-Z]/g, m => `-${m.toLowerCase()}`)}: ${v}`)
+                                                                                .join('; ');
+                                                                            updateNode(selectedNode.id, {
+                                                                                attributes: { ...selectedNode.attributes, style: styleString }
+                                                                            });
+                                                                        }}
+                                                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer p-0 border-0"
+                                                                    />
+                                                                </div>
+                                                                <input
+                                                                    type="text"
+                                                                    value={styles[prop.name] || ''}
+                                                                    onChange={(e) => {
+                                                                        const newStyles = { ...styles };
+                                                                        if (e.target.value) {
+                                                                            newStyles[prop.name] = e.target.value;
+                                                                        } else {
+                                                                            delete newStyles[prop.name];
+                                                                        }
+                                                                        const styleString = Object.entries(newStyles)
+                                                                            .map(([k, v]) => `${k.replace(/[A-Z]/g, m => `-${m.toLowerCase()}`)}: ${v}`)
+                                                                            .join('; ');
+                                                                        updateNode(selectedNode.id, {
+                                                                            attributes: { ...selectedNode.attributes, style: styleString }
+                                                                        });
+                                                                    }}
+                                                                    placeholder={prop.placeholder || 'auto'}
+                                                                    className="flex-1 text-xs border rounded px-2 py-1.5 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                                />
+                                                            </div>
                                                         ) : (
                                                             <input
                                                                 type="text"

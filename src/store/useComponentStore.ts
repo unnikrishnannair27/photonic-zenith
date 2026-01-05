@@ -47,12 +47,21 @@ interface ComponentActions {
     moveNode: (sourceId: string, targetId: string, position: 'before' | 'after' | 'inside') => void;
     addNode: (node: Node, targetId: string, position: 'before' | 'after' | 'inside') => void;
     getSelectedNode: () => Node | null;
+    projectConfig: { name: string, path: string } | null;
+    setProjectConfig: (config: { name: string, path: string } | null) => void;
+    isAstroMode: boolean;
+    toggleAstroMode: () => void;
 }
 
 export const useComponentStore = create<ComponentState & ComponentActions>((set, get) => ({
     docState: parseHtml(DEFAULT_HTML),
     htmlInput: DEFAULT_HTML,
     activeNodeId: null,
+    projectConfig: null,
+    isAstroMode: false,
+
+    setProjectConfig: (config) => set({ projectConfig: config }),
+    toggleAstroMode: () => set((state) => ({ isAstroMode: !state.isAstroMode })),
 
     setHtmlInput: (html: string) => {
         try {

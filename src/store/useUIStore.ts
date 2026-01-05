@@ -4,7 +4,7 @@ interface UIState {
     activeViewport: 'mobile' | 'tablet' | 'desktop' | 'large';
     showImportModal: boolean;
     showCodeModal: boolean;
-    activeCodeTab: 'html' | 'react';
+    activeCodeTab: 'html' | 'react' | 'astro';
     showPreviewModal: boolean;
     sidebarTab: 'add' | 'elements' | 'layers';
     expandedCategories: string[];
@@ -19,7 +19,7 @@ interface UIActions {
     setActiveViewport: (viewport: 'mobile' | 'tablet' | 'desktop' | 'large') => void;
     setShowImportModal: (show: boolean) => void;
     setShowCodeModal: (show: boolean) => void;
-    setActiveCodeTab: (tab: 'html' | 'react') => void;
+    setActiveCodeTab: (tab: 'html' | 'react' | 'astro') => void;
     setShowPreviewModal: (show: boolean) => void;
     setSidebarTab: (tab: 'add' | 'elements' | 'layers') => void;
     setExpandedCategories: (categories: string[]) => void;

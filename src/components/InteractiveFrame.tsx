@@ -1,9 +1,10 @@
 import { useRef, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
-import { type Node } from '../utils/dom';
+import { type Node, findNodeById } from '../utils/dom'; // Added findNodeById
 import { EditableNode } from './EditableNode.tsx';
 import { useComponentStore } from '../store/useComponentStore';
+import styleToObject from 'style-to-object'; // Ensure this is installed or use custom parser
 
 interface InteractiveFrameProps {
     width: string;
@@ -30,7 +31,7 @@ function findNeighbors(nodes: Node[], targetId: string): { prevId: string | null
 }
 
 export function InteractiveFrame({ width, height, label, className }: InteractiveFrameProps) {
-    const { docState, activeNodeId, moveNode, deleteNode } = useComponentStore();
+    const { docState, activeNodeId, moveNode, deleteNode, updateNode } = useComponentStore();
     const nodes = docState.body;
     const headContent = docState.head;
 
@@ -40,6 +41,102 @@ export function InteractiveFrame({ width, height, label, className }: Interactiv
     const [neighbors, setNeighbors] = useState<{ prevId: string | null, nextId: string | null } | null>(null);
     const [dropTarget, setDropTarget] = useState<{ id: string, rect: DOMRect, tagName: string, position: 'top' | 'bottom' | 'inside' } | null>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
+    const [isResizing, setIsResizing] = useState<{
+        startX: number,
+        startY: number,
+        startWidth: number,
+        startHeight: number,
+        direction: string
+    } | null>(null);
+
+    const handleResizeStart = (e: React.MouseEvent, direction: string) => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (!selectionState) return;
+        console.log("Resize Start", direction);
+        setIsResizing({
+            startX: e.screenX,
+            startY: e.screenY,
+            startWidth: selectionState.rect.width,
+            startHeight: selectionState.rect.height,
+            direction
+        });
+    };
+
+    useEffect(() => {
+        if (!isResizing || !selectionState) return;
+
+        const onMove = (e: MouseEvent) => {
+            const dx = e.screenX - isResizing.startX;
+            const dy = e.screenY - isResizing.startY;
+
+            let newW = isResizing.startWidth;
+            let newH = isResizing.startHeight;
+
+            // Visual multiplier to make it feel 1:1 despite zoom or iframe context?
+            // Screen coords are 1:1 usually.
+
+            if (isResizing.direction.includes('e')) newW += dx;
+            if (isResizing.direction.includes('w')) newW -= dx;
+            if (isResizing.direction.includes('s')) newH += dy;
+            if (isResizing.direction.includes('n')) newH -= dy;
+
+            // Constraint
+            if (newW < 10) newW = 10;
+            if (newH < 10) newH = 10;
+
+            const node = findNodeById(nodes, selectionState.id);
+            if (!node || node.type !== 'element') return;
+
+            let currentStyle = {};
+            try {
+                if (node.attributes.style) {
+                    currentStyle = styleToObject(node.attributes.style) || {};
+                }
+            } catch (e) { }
+
+            const newStyleObj = {
+                ...currentStyle,
+                width: `${newW}px`,
+                height: `${newH}px`
+            };
+
+            // Re-serialize style
+            // We use simple map, but converting camelCase back to kebab-case might be needed if styleToObject returns camel?
+            // style-to-object returns property names as written in CSS (kebab-case usually).
+            // Let's safe guard.
+            const styleStr = Object.entries(newStyleObj)
+                .map(([k, v]) => `${k.replace(/[A-Z]/g, m => `-${m.toLowerCase()}`)}: ${v}`)
+                .join('; ');
+
+            updateNode(selectionState.id, {
+                attributes: {
+                    ...node.attributes,
+                    style: styleStr
+                }
+            });
+        };
+
+        const onUp = () => setIsResizing(null);
+
+        // Attach to both windows to handle dragging outside iframe
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        const iframeWin = iframeRef.current?.contentWindow;
+        if (iframeWin) {
+            iframeWin.addEventListener('mousemove', onMove);
+            iframeWin.addEventListener('mouseup', onUp);
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            if (iframeWin) {
+                iframeWin.removeEventListener('mousemove', onMove);
+                iframeWin.removeEventListener('mouseup', onUp);
+            }
+        };
+    }, [isResizing, selectionState, nodes, updateNode]); // Depend on nodes to get fresh style
 
     // Calculate neighbors on hover
     useEffect(() => {
@@ -72,7 +169,7 @@ export function InteractiveFrame({ width, height, label, className }: Interactiv
 
             updateRect();
             // Scroll to view
-            el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+            el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
 
             // Detect resize/mutation? For now, simplistic.
             window.addEventListener('resize', updateRect);
@@ -99,8 +196,6 @@ export function InteractiveFrame({ width, height, label, className }: Interactiv
                     max-height: none !important;
                     opacity: 1 !important;
                     visibility: visible !important;
-                    position: relative !important; /* Prevent overlap if absolute */
-                    transform: none !important;
                 }
             `;
             doc.head.appendChild(style);
@@ -150,6 +245,7 @@ export function InteractiveFrame({ width, height, label, className }: Interactiv
                             />
                         ))}
 
+
                         {/* Selection Overlay (Active) */}
                         {selectionState && (
                             <div
@@ -178,6 +274,29 @@ export function InteractiveFrame({ width, height, label, className }: Interactiv
                                 }}>
                                     {selectionState.tagName}
                                 </div>
+
+                                {/* Resize Handles */}
+                                {['nw', 'ne', 'se', 'sw'].map(cursor => (
+                                    <div
+                                        key={cursor}
+                                        onMouseDown={(e) => handleResizeStart(e, cursor)}
+                                        style={{
+                                            position: 'absolute',
+                                            width: '8px',
+                                            height: '8px',
+                                            background: 'white',
+                                            border: '1px solid #3b82f6',
+                                            borderRadius: '50%',
+                                            pointerEvents: 'auto',
+                                            cursor: `${cursor}-resize`,
+                                            top: cursor.includes('n') ? '-4px' : 'auto',
+                                            bottom: cursor.includes('s') ? '-4px' : 'auto',
+                                            left: cursor.includes('w') ? '-4px' : 'auto',
+                                            right: cursor.includes('e') ? '-4px' : 'auto',
+                                            zIndex: 10001
+                                        }}
+                                    />
+                                ))}
                             </div>
                         )}
 

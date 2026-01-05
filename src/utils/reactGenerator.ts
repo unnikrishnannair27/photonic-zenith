@@ -42,8 +42,13 @@ function nodeToJSX(node: Node, indent: string): string {
                 try {
                     const styleObj = styleToObject(val);
                     if (!styleObj) return '';
-                    // Convert to JS object string a biit hacky but works for simple cases
-                    return `style={${JSON.stringify(styleObj)}}`;
+                    const camelStyle = Object.fromEntries(
+                        Object.entries(styleObj).map(([k, v]) => [
+                            k.replace(/-([a-z])/g, (g) => g[1].toUpperCase()),
+                            v
+                        ])
+                    );
+                    return `style={${JSON.stringify(camelStyle)}}`;
                 } catch (e) {
                     return '';
                 }

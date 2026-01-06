@@ -46,7 +46,7 @@ interface ComponentActions {
     undo: () => void;
     redo: () => void;
     setActiveNodeId: (id: string | null) => void;
-    updateNode: (id: string, updates: any) => void;
+    updateNode: (id: string, updates: any, options?: { skipHistory?: boolean }) => void;
     deleteNode: (id: string) => void;
     moveNode: (sourceId: string, targetId: string, position: 'before' | 'after' | 'inside') => void;
     addNode: (node: Node, targetId: string, position: 'before' | 'after' | 'inside') => void;
@@ -55,6 +55,7 @@ interface ComponentActions {
     setProjectConfig: (config: { name: string, path: string } | null) => void;
     isAstroMode: boolean;
     toggleAstroMode: () => void;
+    saveHistory: () => void;
 }
 
 export const useComponentStore = create<ComponentState & ComponentActions>((set, get) => ({
@@ -68,6 +69,11 @@ export const useComponentStore = create<ComponentState & ComponentActions>((set,
 
     setProjectConfig: (config) => set({ projectConfig: config }),
     toggleAstroMode: () => set((state) => ({ isAstroMode: !state.isAstroMode })),
+
+    saveHistory: () => {
+        const { docState, history } = get();
+        set({ history: [...history, docState].slice(-50), future: [] });
+    },
 
     undo: () => {
         const { history, future, docState } = get();
@@ -113,16 +119,25 @@ export const useComponentStore = create<ComponentState & ComponentActions>((set,
 
     setActiveNodeId: (id: string | null) => set({ activeNodeId: id }),
 
-    updateNode: (id: string, updates: any) => {
+    updateNode: (id: string, updates: any, options?: { skipHistory?: boolean }) => {
         const { docState, history } = get();
         const newBody = updateNodeInTree(docState.body, id, updates);
         const newDoc = { ...docState, body: newBody };
         const newHtml = serializeTreeToHtml(newDoc);
+
+        let newHistory = history;
+        let newFuture = get().future;
+
+        if (!options?.skipHistory) {
+            newHistory = [...history, docState].slice(-50);
+            newFuture = [];
+        }
+
         set({
             docState: newDoc,
             htmlInput: newHtml,
-            history: [...history, docState].slice(-50),
-            future: []
+            history: newHistory,
+            future: newFuture
         });
     },
 

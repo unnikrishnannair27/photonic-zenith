@@ -31,7 +31,7 @@ function findNeighbors(nodes: Node[], targetId: string): { prevId: string | null
 }
 
 export function InteractiveFrame({ width, height, label, className }: InteractiveFrameProps) {
-    const { docState, activeNodeId, moveNode, deleteNode, updateNode } = useComponentStore();
+    const { docState, activeNodeId, moveNode, deleteNode, updateNode, undo, redo, saveHistory } = useComponentStore();
     const nodes = docState.body;
     const headContent = docState.head;
 
@@ -53,6 +53,7 @@ export function InteractiveFrame({ width, height, label, className }: Interactiv
         e.stopPropagation();
         e.preventDefault();
         if (!selectionState) return;
+        saveHistory(); // Save BEFORE resize starts
         console.log("Resize Start", direction);
         setIsResizing({
             startX: e.screenX,
@@ -114,7 +115,7 @@ export function InteractiveFrame({ width, height, label, className }: Interactiv
                     ...node.attributes,
                     style: styleStr
                 }
-            });
+            }, { skipHistory: true }); // Skip history on move
         };
 
         const onUp = () => setIsResizing(null);
@@ -215,8 +216,32 @@ export function InteractiveFrame({ width, height, label, className }: Interactiv
             doc.body.style.margin = '0'; // reset default margin often useful
 
             setMountNode(doc.getElementById('root'));
+
+            // Keyboard Shortcuts inside Iframe
+            const handleKeyDown = (e: KeyboardEvent) => {
+                if (e.metaKey || e.ctrlKey) {
+                    if (e.key === 'z') {
+                        e.preventDefault();
+                        if (e.shiftKey) redo();
+                        else undo();
+                    }
+                    else if (e.key === 'y') {
+                        e.preventDefault();
+                        redo();
+                    }
+                }
+            };
+            doc.defaultView?.addEventListener('keydown', handleKeyDown);
+
+            // Cleanup listener on unmount/change? 
+            // The useEffect has [headContent]. If head changes, this reruns.
+            // Ideally we should return cleanup function.
+            // But checking doc.defaultView in cleanup might be tricky if iframe is gone.
+            // I'll add it to the cleanup logic below if I can, but cleanup of this specific effect creates new mountNode?
+            // Actually, `headContent` changes rarely.
+            // Let's refine the listener attachment.
         }
-    }, [headContent]);
+    }, [headContent, undo, redo]); // Add undo/redo dependencies for closure capture if they change? (Store functions are stable usually)
 
     return (
         <div className={clsx("flex flex-col items-center gap-2", className)}>

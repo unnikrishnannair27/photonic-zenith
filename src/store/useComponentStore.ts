@@ -36,11 +36,15 @@ interface ComponentState {
     docState: ParsedDocument;
     htmlInput: string;
     activeNodeId: string | null;
+    history: ParsedDocument[];
+    future: ParsedDocument[];
 }
 
 interface ComponentActions {
     setHtmlInput: (html: string) => void;
     setDocState: (doc: ParsedDocument) => void;
+    undo: () => void;
+    redo: () => void;
     setActiveNodeId: (id: string | null) => void;
     updateNode: (id: string, updates: any) => void;
     deleteNode: (id: string) => void;
@@ -59,9 +63,37 @@ export const useComponentStore = create<ComponentState & ComponentActions>((set,
     activeNodeId: null,
     projectConfig: null,
     isAstroMode: false,
+    history: [],
+    future: [],
 
     setProjectConfig: (config) => set({ projectConfig: config }),
     toggleAstroMode: () => set((state) => ({ isAstroMode: !state.isAstroMode })),
+
+    undo: () => {
+        const { history, future, docState } = get();
+        if (history.length === 0) return;
+        const previous = history[history.length - 1];
+        const newHistory = history.slice(0, -1);
+        set({
+            docState: previous,
+            htmlInput: serializeTreeToHtml(previous),
+            history: newHistory,
+            future: [docState, ...future]
+        });
+    },
+
+    redo: () => {
+        const { history, future, docState } = get();
+        if (future.length === 0) return;
+        const next = future[0];
+        const newFuture = future.slice(1);
+        set({
+            docState: next,
+            htmlInput: serializeTreeToHtml(next),
+            history: [...history, docState],
+            future: newFuture
+        });
+    },
 
     setHtmlInput: (html: string) => {
         try {
@@ -82,15 +114,20 @@ export const useComponentStore = create<ComponentState & ComponentActions>((set,
     setActiveNodeId: (id: string | null) => set({ activeNodeId: id }),
 
     updateNode: (id: string, updates: any) => {
-        const { docState } = get();
+        const { docState, history } = get();
         const newBody = updateNodeInTree(docState.body, id, updates);
         const newDoc = { ...docState, body: newBody };
         const newHtml = serializeTreeToHtml(newDoc);
-        set({ docState: newDoc, htmlInput: newHtml });
+        set({
+            docState: newDoc,
+            htmlInput: newHtml,
+            history: [...history, docState].slice(-50),
+            future: []
+        });
     },
 
     deleteNode: (id: string) => {
-        const { docState, activeNodeId } = get();
+        const { docState, activeNodeId, history } = get();
 
         const remove = (nodes: Node[]): Node[] => {
             const filtered: Node[] = [];
@@ -109,12 +146,14 @@ export const useComponentStore = create<ComponentState & ComponentActions>((set,
         set({
             docState: newDoc,
             htmlInput: newHtml,
-            activeNodeId: activeNodeId === id ? null : activeNodeId
+            activeNodeId: activeNodeId === id ? null : activeNodeId,
+            history: [...history, docState].slice(-50),
+            future: []
         });
     },
 
     moveNode: (sourceId: string, targetId: string, position: 'before' | 'after' | 'inside') => {
-        const { docState } = get();
+        const { docState, history } = get();
 
         // Deep clone to avoid mutation issues
         const cloneNodes = (nodes: Node[]): Node[] => nodes.map(n => n.type === 'element' ? { ...n, children: cloneNodes(n.children) } : { ...n });
@@ -155,11 +194,16 @@ export const useComponentStore = create<ComponentState & ComponentActions>((set,
 
         const newDoc = { ...docState, body: newBody };
         const newHtml = serializeTreeToHtml(newDoc);
-        set({ docState: newDoc, htmlInput: newHtml });
+        set({
+            docState: newDoc,
+            htmlInput: newHtml,
+            history: [...history, docState].slice(-50),
+            future: []
+        });
     },
 
     addNode: (nodeToAdd: Node, targetId: string, position: 'before' | 'after' | 'inside') => {
-        const { docState } = get();
+        const { docState, history } = get();
 
         const cloneNodes = (nodes: Node[]): Node[] => nodes.map(n => n.type === 'element' ? { ...n, children: cloneNodes(n.children) } : { ...n });
         let newBody = cloneNodes(docState.body);
@@ -187,7 +231,12 @@ export const useComponentStore = create<ComponentState & ComponentActions>((set,
 
         const newDoc = { ...docState, body: newBody };
         const newHtml = serializeTreeToHtml(newDoc);
-        set({ docState: newDoc, htmlInput: newHtml });
+        set({
+            docState: newDoc,
+            htmlInput: newHtml,
+            history: [...history, docState].slice(-50),
+            future: []
+        });
     },
 
     getSelectedNode: () => {

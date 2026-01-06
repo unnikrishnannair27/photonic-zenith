@@ -3,7 +3,7 @@ import { InteractiveFrame } from './components/InteractiveFrame';
 import { DraggableTemplate } from './components/DraggableTemplate';
 import { TreeView } from './components/TreeView';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
-import { Code, Smartphone, Tablet, Monitor, Layout, Box, Type, MousePointer2, ExternalLink, X, Eye, FileCode, Layers, Plus, Box as BoxIcon, ChevronDown, ChevronRight, PanelLeft, PanelRight } from 'lucide-react';
+import { Code, Smartphone, Tablet, Monitor, Layout, Box, Type, MousePointer2, ExternalLink, X, Eye, FileCode, Layers, Plus, Box as BoxIcon, ChevronDown, ChevronRight, PanelLeft, PanelRight, Undo, Redo } from 'lucide-react';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { generateReactCode } from './utils/reactGenerator';
 import { HTML_DATA } from './data/htmlElements';
@@ -55,6 +55,10 @@ export default function App() {
     htmlInput,
     setHtmlInput,
     projectConfig,
+    undo,
+    redo,
+    history,
+    future,
   } = useComponentStore();
 
   // UI Store
@@ -130,15 +134,51 @@ export default function App() {
         const data = source.data;
         if (data && typeof data.html === 'string') {
           const newHtmlContent = data.html as string;
-          const currentHtml = useComponentStore.getState().htmlInput;
+          // Capture history directly here or rely on setHtmlInput?
+          // setHtmlInput in store doesn't save history currently.
+          // We SHOULD save history for drag-drop import.
+          // I'll manually modify this to use a new `importHtml` action or just assume setHtmlInput handles it?
+          // I decided setHtmlInput DOES NOT handle history.
+          // So I should probably add history here manually?
+          // Accessing store directly:
+          const store = useComponentStore.getState();
+          const { history, docState } = store;
+          // Save history
+          useComponentStore.setState({ history: [...history, docState], future: [] });
+
+          const currentHtml = store.htmlInput;
           let nextHtml = '';
           if (currentHtml.includes('</body>')) nextHtml = currentHtml.replace('</body>', `  ${newHtmlContent}\n</body>`);
           else nextHtml = currentHtml + '\n' + newHtmlContent;
-          useComponentStore.getState().setHtmlInput(nextHtml);
+          store.setHtmlInput(nextHtml);
         }
       },
     });
   }, []);
+
+  // Keyboard Shortcuts (Undo/Redo)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for CMD/CTRL
+      if (e.metaKey || e.ctrlKey) {
+        if (e.key === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            redo();
+          } else {
+            undo();
+          }
+        }
+        else if (e.key === 'y') {
+          e.preventDefault();
+          redo();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undo, redo]);
 
   const ReactCode = generateReactCode(docState);
   const AstroCode = generateAstroCode(docState);
@@ -204,6 +244,25 @@ export default function App() {
           </button>
 
           <div className="w-px h-6 bg-gray-300 mx-2"></div>
+
+          <div className="flex items-center gap-1 mr-2">
+            <button
+              onClick={undo}
+              disabled={history.length === 0}
+              className="p-1.5 rounded-md hover:bg-gray-100 text-gray-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              title="Undo (Ctrl+Z)"
+            >
+              <Undo size={18} />
+            </button>
+            <button
+              onClick={redo}
+              disabled={future.length === 0}
+              className="p-1.5 rounded-md hover:bg-gray-100 text-gray-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              title="Redo (Ctrl+Shift+Z)"
+            >
+              <Redo size={18} />
+            </button>
+          </div>
 
           {/* Design Mode / Viewport Controls */}
           <div className="flex items-center bg-gray-100 p-1 rounded-lg border border-gray-200">
